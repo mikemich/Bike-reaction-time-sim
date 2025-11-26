@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Bike Rear Detection Simulation</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+    }
+
+    body {
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    .app {
+      display: flex;
+      flex-direction: row;
+      gap: 1rem;
+      padding: 1rem;
+    }
+
+    .left {
+      flex: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .right {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .panel {
+      background: #020617;
+      border-radius: 0.75rem;
+      padding: 0.75rem 1rem;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+      border: 1px solid #1f2937;
+    }
+
+    h1 {
+      font-size: 1.1rem;
+      margin: 0 0 0.35rem;
+    }
+
+    .subtext {
+      font-size: 0.8rem;
+      color: #9ca3af;
+    }
+
+    canvas {
+      border-radius: 0.75rem;
+      background: #020617;
+      border: 1px solid #1f2937;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem 1rem;
+      font-size: 0.85rem;
+      align-items: center;
+    }
+
+    .controls label {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .controls input[type="range"] {
+      width: 100%;
+    }
+
+    .value {
+      font-variant-numeric: tabular-nums;
+      color: #facc15;
+      font-size: 0.8rem;
+    }
+
+    button {
+      background: #1d4ed8;
+      color: white;
+      border: none;
+      border-radius: 999px;
+      padding: 0.4rem 0.9rem;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    button.secondary {
+      background: #111827;
+      border: 1px solid #374151;
+      color: #e5e7eb;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-top: 0.4rem;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.4rem 1rem;
+      font-size: 0.85rem;
+    }
+
+    .stat-label {
+      color: #9ca3af;
+    }
+
+    .stat-value {
+      font-variant-numeric: tabular-nums;
+      color: #fbbf24;
+    }
+
+    footer {
+      text-align: center;
+      padding: 0.5rem;
+      font-size: 0.75rem;
+      color: #6b7280;
+    }
+
+    @media (max-width: 900px) {
+      .app {
+        flex-direction: column;
+      }
+
+      .controls {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="left">
+      <div class="panel">
+        <h1>Bike Rear Detection – 2D Simulation</h1>
+        <div class="subtext">
+          You are the blue bike. An orange bike approaches from behind.
+          The red light is your rear detection device. Press <b>Space</b> when you notice the bike.
+        </div>
+      </div>
+
+      <div class="panel">
+        <canvas id="simCanvas" width="900" height="300"></canvas>
+      </div>
+
+      <div class="panel">
+        <h1>Controls</h1>
+        <div class="controls">
+          <label>
+            Your speed (m/s)
+            <input type="range" id="egoSpeed" min="0" max="12" step="0.5" value="5" />
+            <span class="value"><span id="egoSpeedVal">5.0</span> m/s</span>
+          </label>
+
+          <label>
+            Other bike speed (m/s)
+            <input type="range" id="bikeSpeed" min="0" max="15" step="0.5" value="8" />
+            <span class="value"><span id="bikeSpeedVal">8.0</span> m/s</span>
+          </label>
+
+          <label>
+            Detection distance (m)
+            <input type="range" id="detDist" min="3" max="40" step="1" value="15" />
+            <span class="value"><span id="detDistVal">15</span> m</span>
+          </label>
+
+          <label>
+            Closing speed threshold (m/s)
+            <input type="range" id="vThresh" min="0" max="5" step="0.1" value="0.5" />
+            <span class="value"><span id="vThreshVal">0.5</span> m/s</span>
+          </label>
+        </div>
+
+        <div class="button-row">
+          <button id="startBtn">▶ Start</button>
+          <button id="resetBtn" class="secondary">⟲ Reset scenario</button>
+          <button id="spawnBtn" class="secondary">🚴 New bike</button>
+          <button id="downloadBtn" class="secondary">⬇ Download CSV</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="panel">
+        <h1>Live Stats</h1>
+        <div class="stats-grid">
+          <div class="stat-label">Sim time</div>
+          <div class="stat-value"><span id="tSim">0.0</span> s</div>
+
+          <div class="stat-label">Relative distance</div>
+          <div class="stat-value"><span id="relDist">–</span> m</div>
+
+          <div class="stat-label">Closing speed</div>
+          <div class="stat-value"><span id="relSpeed">–</span> m/s</div>
+
+          <div class="stat-label">Detection</div>
+          <div class="stat-value"><span id="detState">OFF</span></div>
+
+          <div class="stat-label">User reactions</div>
+          <div class="stat-value"><span id="reactionCount">0</span></div>
+
+          <div class="stat-label">Detection triggers</div>
+          <div class="stat-value"><span id="detCount">0</span></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h1>How it works</h1>
+        <div class="subtext">
+          We simulate 1D motion along the road:
+          <ul>
+            <li>You and the other bike move at constant speeds.</li>
+            <li>The detection light turns ON when:
+              <br>• the other bike is behind and within the detection distance, and
+              <br>• its speed is higher than yours by at least the closing speed threshold.
+            </li>
+            <li>Press <b>Space</b> when you personally notice the bike in the sim.</li>
+          </ul>
+          Use the CSV download to analyse reaction time vs distance, detection state, etc.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Press <b>Space</b> during the simulation to log your reaction. Reload the page to clear everything.
+  </footer>
+
+  <script>
+    // --- Simulation parameters (world) ---
+    const canvas = document.getElementById("simCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const SCALE = 10; // px per meter
+    const ROAD_WIDTH = canvas.height * 0.6;
+    const ROAD_TOP = (canvas.height - ROAD_WIDTH) / 2;
+
+    // ego bike (you)
+    const ego = {
+      x: canvas.width * 0.3, // fixed in screen space
+      y: canvas.height / 2,
+      speed: 5.0, // m/s
+    };
+
+    // other bike state (in "world" coordinates, 1D along road)
+    const bike = {
+      worldX: -30, // meters behind ego world position 0
+      speed: 8.0,  // m/s
+      active: true,
+      id: 1,
+    };
+
+    // detection settings
+    const detParams = {
+      distance: 15, // m
+      closingSpeedThresh: 0.5, // m/s
+    };
+
+    // time
+    let tSim = 0;
+    let lastFrameTime = null;
+    let running = false;
+
+    // logging
+    const events = [];
+    let detectionActive = false;
+    let lastDetectionActive = false;
+    let detectionCount = 0;
+    let reactionCount = 0;
+
+    // world representation:
+    // take ego world pos = 0, and bike.worldX < 0 means behind.
+    // on screen, ego is at fixed px, bike is drawn at ego.x + bike.worldX * SCALE.
+
+    // --- UI elements ---
+    const egoSpeedInput = document.getElementById("egoSpeed");
+    const bikeSpeedInput = document.getElementById("bikeSpeed");
+    const detDistInput = document.getElementById("detDist");
+    const vThreshInput = document.getElementById("vThresh");
+
+    const egoSpeedVal = document.getElementById("egoSpeedVal");
+    const bikeSpeedVal = document.getElementById("bikeSpeedVal");
+    const detDistVal = document.getElementById("detDistVal");
+    const vThreshVal = document.getElementById("vThreshVal");
+
+    const tSimEl = document.getElementById("tSim");
+    const relDistEl = document.getElementById("relDist");
+    const relSpeedEl = document.getElementById("relSpeed");
+    const detStateEl = document.getElementById("detState");
+    const reactionCountEl = document.getElementById("reactionCount");
+    const detCountEl = document.getElementById("detCount");
+
+    const startBtn = document.getElementById("startBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const spawnBtn = document.getElementById("spawnBtn");
+    const downloadBtn = document.getElementById("downloadBtn");
+
+    // --- Helper functions ---
+
+    function resetScenario() {
+      tSim = 0;
+      lastFrameTime = null;
+      bike.worldX = -30;
+      bike.speed = parseFloat(bikeSpeedInput.value);
+      bike.active = true;
+      detectionActive = false;
+      lastDetectionActive = false;
+      detectionCount = 0;
+      detCountEl.textContent = detectionCount.toString();
+      events.length = 0;
+      reactionCount = 0;
+      reactionCountEl.textContent = "0";
+    }
+
+    function spawnNewBike() {
+      bike.id += 1;
+      bike.worldX = -30 - Math.random() * 40; // spawn 30-70 m behind
+      bike.speed = parseFloat(bikeSpeedInput.value);
+      bike.active = true;
+    }
+
+    function logEvent(type, relDist, closingSpeed, detState) {
+      events.push({
+        time: tSim,
+        type,
+        relDist,
+        closingSpeed,
+        detectionActive: detState ? 1 : 0,
+        bikeId: bike.id,
+      });
+    }
+
+    function updateFromUI() {
+      ego.speed = parseFloat(egoSpeedInput.value);
+      bike.speed = parseFloat(bikeSpeedInput.value);
+      detParams.distance = parseFloat(detDistInput.value);
+      detParams.closingSpeedThresh = parseFloat(vThreshInput.value);
+
+      egoSpeedVal.textContent = ego.speed.toFixed(1);
+      bikeSpeedVal.textContent = bike.speed.toFixed(1);
+      detDistVal.textContent = detParams.distance.toString();
+      vThreshVal.textContent = detParams.closingSpeedThresh.toFixed(1);
+    }
+
+    function drawScene(relDist, closingSpeed) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // road
+      ctx.fillStyle = "#1e293b";
+      ctx.fillRect(0, ROAD_TOP, canvas.width, ROAD_WIDTH);
+
+      // lane center
+      ctx.strokeStyle = "#4b5563";
+      ctx.setLineDash([10, 10]);
+      ctx.beginPath();
+      ctx.moveTo(0, canvas.height / 2);
+      ctx.lineTo(canvas.width, canvas.height / 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // ego bike (you)
+      const egoScreenX = ego.x;
+      const egoScreenY = ego.y;
+
+      // detection zone visualization
+      ctx.strokeStyle = "rgba(239,68,68,0.35)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(egoScreenX, egoScreenY, detParams.distance * SCALE, Math.PI / 2, (3 * Math.PI) / 2, true);
+      ctx.stroke();
+
+      // ego bike body
+      ctx.fillStyle = "#38bdf8";
+      ctx.beginPath();
+      ctx.arc(egoScreenX, egoScreenY, 14, 0, Math.PI * 2);
+      ctx.fill();
+
+      // rear light indicator (small circle behind ego)
+      const lightRadius = 6;
+      const lightX = egoScreenX - 20;
+      const lightY = egoScreenY;
+
+      ctx.fillStyle = detectionActive ? "#f97316" : "#111827";
+      ctx.beginPath();
+      ctx.arc(lightX, lightY, lightRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (detectionActive) {
+        const gradient = ctx.createRadialGradient(
+          lightX,
+          lightY,
+          0,
+          lightX,
+          lightY,
+          40
+        );
+        gradient.addColorStop(0, "rgba(249,115,22,0.8)");
+        gradient.addColorStop(1, "rgba(249,115,22,0.0)");
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(lightX, lightY, 40, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // other bike
+      if (bike.active) {
+        const bikeScreenX = egoScreenX + bike.worldX * SCALE;
+        const bikeScreenY = egoScreenY - 25; // little offset
+
+        ctx.fillStyle = "#fb923c";
+        ctx.beginPath();
+        ctx.arc(bikeScreenX, bikeScreenY, 12, 0, Math.PI * 2);
+        ctx.fill();
+
+        // small arrow showing its direction
+        ctx.strokeStyle = "#facc15";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(bikeScreenX - 15, bikeScreenY);
+        ctx.lineTo(bikeScreenX + 5, bikeScreenY);
+        ctx.stroke();
+      }
+
+      // HUD text
+      ctx.fillStyle = "#9ca3af";
+      ctx.font = "12px system-ui";
+      ctx.fillText("Top-down road view – You (blue), other bike (orange)", 10, 18);
+    }
+
+    function updateStats(relDist, closingSpeed) {
+      tSimEl.textContent = tSim.toFixed(1);
+      relDistEl.textContent =
+        relDist === null ? "–" : relDist.toFixed(1);
+      relSpeedEl.textContent =
+        closingSpeed === null ? "–" : closingSpeed.toFixed(2);
+
+      detStateEl.textContent = detectionActive ? "ON" : "OFF";
+      detStateEl.style.color = detectionActive ? "#22c55e" : "#ef4444";
+
+      reactionCountEl.textContent = reactionCount.toString();
+      detCountEl.textContent = detectionCount.toString();
+    }
+
+    // --- Main simulation loop ---
+
+    function step(timestamp) {
+      if (!running) {
+        drawScene(null, null);
+        updateStats(null, null);
+        return;
+      }
+
+      if (lastFrameTime === null) {
+        lastFrameTime = timestamp;
+      }
+      const dt = Math.min((timestamp - lastFrameTime) / 1000, 0.05); // clamp
+      lastFrameTime = timestamp;
+
+      tSim += dt;
+
+      // update bike position in world coordinates (ego at 0)
+      if (bike.active) {
+        // ego moves forward at ego.speed, bike moves also, so relative motion:
+        // treat ego at 0, so bike.worldX += (v_bike - v_ego) * dt
+        const relVel = bike.speed - ego.speed;
+        bike.worldX += relVel * dt;
+
+        // if bike has passed far ahead, deactivate
+        if (bike.worldX > 40) {
+          bike.active = false;
+        }
+      }
+
+      // detection logic
+      let relDist = null;
+      let closingSpeed = null;
+
+      if (bike.active) {
+        // bike.worldX < 0 => behind
+        relDist = -bike.worldX; // positive value = meters behind ego
+        closingSpeed = bike.speed - ego.speed; // if >0, bike closing
+
+        detectionActive =
+          bike.worldX < 0 &&
+          relDist <= detParams.distance &&
+          closingSpeed >= detParams.closingSpeedThresh;
+
+        // log detection edges
+        if (detectionActive && !lastDetectionActive) {
+          detectionCount += 1;
+          logEvent("auto_detect_on", relDist, closingSpeed, true);
+        } else if (!detectionActive && lastDetectionActive) {
+          logEvent("auto_detect_off", relDist, closingSpeed, false);
+        }
+        lastDetectionActive = detectionActive;
+      } else {
+        detectionActive = false;
+        lastDetectionActive = false;
+      }
+
+      drawScene(relDist, closingSpeed);
+      updateStats(relDist, closingSpeed);
+
+      requestAnimationFrame(step);
+    }
+
+    // --- Event listeners ---
+
+    egoSpeedInput.addEventListener("input", () => {
+      updateFromUI();
+    });
+
+    bikeSpeedInput.addEventListener("input", () => {
+      updateFromUI();
+    });
+
+    detDistInput.addEventListener("input", () => {
+      updateFromUI();
+    });
+
+    vThreshInput.addEventListener("input", () => {
+      updateFromUI();
+    });
+
+    startBtn.addEventListener("click", () => {
+      running = !running;
+      startBtn.textContent = running ? "⏸ Pause" : "▶ Start";
+      if (running) {
+        lastFrameTime = null;
+        requestAnimationFrame(step);
+      }
+    });
+
+    resetBtn.addEventListener("click", () => {
+      resetScenario();
+      if (!running) {
+        drawScene(null, null);
+        updateStats(null, null);
+      }
+    });
+
+    spawnBtn.addEventListener("click", () => {
+      spawnNewBike();
+    });
+
+    downloadBtn.addEventListener("click", () => {
+      if (events.length === 0) {
+        alert("No events logged yet.");
+        return;
+      }
+      let csv = "time_s,type,rel_distance_m,closing_speed_mps,detection_active,bike_id\n";
+      for (const e of events) {
+        csv += [
+          e.time.toFixed(3),
+          e.type,
+          e.relDist !== null ? e.relDist.toFixed(3) : "",
+          e.closingSpeed !== null ? e.closingSpeed.toFixed(3) : "",
+          e.detectionActive,
+          e.bikeId,
+        ].join(",") + "\n";
+      }
+
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "bike_detection_events.csv";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
+    // Space bar = user reaction
+    window.addEventListener("keydown", (e) => {
+      if (e.code === "Space") {
+        e.preventDefault();
+        // log reaction only if sim is running
+        if (!running) return;
+        // compute current relDist + closingSpeed
+        let relDist = null;
+        let closingSpeed = null;
+        if (bike.active) {
+          relDist = -bike.worldX;
+          closingSpeed = bike.speed - ego.speed;
+        }
+        reactionCount += 1;
+        logEvent("user_reaction", relDist, closingSpeed, detectionActive);
+        reactionCountEl.textContent = reactionCount.toString();
+      }
+    });
+
+    // initial UI + draw
+    updateFromUI();
+    resetScenario();
+    drawScene(null, null);
+    updateStats(null, null);
+  </script>
+</body>
+</html>
