@@ -159,8 +159,8 @@
       <div class="panel">
         <h1>Bike Rear Detection – 2D Simulation</h1>
         <div class="subtext">
-          You are the blue bike. An orange bike approaches from behind.
-          The red light is your rear detection device. Press <b>Space</b> when you notice the bike.
+          You are the blue bike. An orange bike approaches from behind but you can't see it until it's next to you.
+          The red light is your rear detection device (in some trials). Press <b>Space</b> when you notice the bike.
         </div>
       </div>
 
@@ -221,6 +221,9 @@
           <div class="stat-label">Detection</div>
           <div class="stat-value"><span id="detState">OFF</span></div>
 
+          <div class="stat-label">Light condition</div>
+          <div class="stat-value"><span id="lightCond">WITH LIGHT</span></div>
+
           <div class="stat-label">User reactions</div>
           <div class="stat-value"><span id="reactionCount">0</span></div>
 
@@ -235,13 +238,15 @@
           We simulate 1D motion along the road:
           <ul>
             <li>You and the other bike move at constant speeds.</li>
-            <li>The detection light turns ON when:
+            <li>The detection logic always runs, but in 50% of trials the rear light is disabled (no visual cue).</li>
+            <li>You cannot see the other bike visually until it's next to you (no rear view).</li>
+            <li>The rear light turns ON (when enabled) when:
               <br>• the other bike is behind and within the detection distance, and
               <br>• its speed is higher than yours by at least the closing speed threshold.
             </li>
             <li>Press <b>Space</b> when you personally notice the bike in the sim.</li>
           </ul>
-          Use the CSV download to analyse reaction time vs distance, detection state, etc.
+          Use the CSV download to analyse reaction time vs distance, detection state, and light/no-light condition.
         </div>
       </div>
     </div>
@@ -281,6 +286,9 @@
       closingSpeedThresh: 0.5, // m/s
     };
 
+    // light condition: true = light visible & used, false = no-light trial
+    let lightEnabled = true;
+
     // time
     let tSim = 0;
     let lastFrameTime = null;
@@ -292,10 +300,6 @@
     let lastDetectionActive = false;
     let detectionCount = 0;
     let reactionCount = 0;
-
-    // world representation:
-    // take ego world pos = 0, and bike.worldX < 0 means behind.
-    // on screen, ego is at fixed px, bike is drawn at ego.x + bike.worldX * SCALE.
 
     // --- UI elements ---
     const egoSpeedInput = document.getElementById("egoSpeed");
@@ -312,6 +316,7 @@
     const relDistEl = document.getElementById("relDist");
     const relSpeedEl = document.getElementById("relSpeed");
     const detStateEl = document.getElementById("detState");
+    const lightCondEl = document.getElementById("lightCond");
     const reactionCountEl = document.getElementById("reactionCount");
     const detCountEl = document.getElementById("detCount");
 
@@ -321,6 +326,22 @@
     const downloadBtn = document.getElementById("downloadBtn");
 
     // --- Helper functions ---
+
+    function randomizeLightCondition() {
+      // 50/50 chance
+      lightEnabled = Math.random() < 0.5;
+      updateLightConditionLabel();
+    }
+
+    function updateLightConditionLabel() {
+      if (lightEnabled) {
+        lightCondEl.textContent = "WITH LIGHT";
+        lightCondEl.style.color = "#22c55e";
+      } else {
+        lightCondEl.textContent = "NO LIGHT";
+        lightCondEl.style.color = "#9ca3af";
+      }
+    }
 
     function resetScenario() {
       tSim = 0;
@@ -335,6 +356,7 @@
       events.length = 0;
       reactionCount = 0;
       reactionCountEl.textContent = "0";
+      randomizeLightCondition();
     }
 
     function spawnNewBike() {
@@ -342,6 +364,7 @@
       bike.worldX = -30 - Math.random() * 40; // spawn 30-70 m behind
       bike.speed = parseFloat(bikeSpeedInput.value);
       bike.active = true;
+      randomizeLightCondition();
     }
 
     function logEvent(type, relDist, closingSpeed, detState) {
@@ -352,6 +375,7 @@
         closingSpeed,
         detectionActive: detState ? 1 : 0,
         bikeId: bike.id,
+        lightEnabled: lightEnabled ? 1 : 0,
       });
     }
 
@@ -405,12 +429,15 @@
       const lightX = egoScreenX - 20;
       const lightY = egoScreenY;
 
-      ctx.fillStyle = detectionActive ? "#f97316" : "#111827";
+      // if lightEnabled, show actual state; otherwise always off visually
+      const lightOnVisually = lightEnabled && detectionActive;
+
+      ctx.fillStyle = lightOnVisually ? "#f97316" : "#111827";
       ctx.beginPath();
       ctx.arc(lightX, lightY, lightRadius, 0, Math.PI * 2);
       ctx.fill();
 
-      if (detectionActive) {
+      if (lightOnVisually) {
         const gradient = ctx.createRadialGradient(
           lightX,
           lightY,
@@ -428,7 +455,9 @@
       }
 
       // other bike
-      if (bike.active) {
+      // IMPORTANT CHANGE: you cannot see bike until it's next to you
+      // so we only draw it when worldX >= 0 (at or ahead of ego)
+      if (bike.active && bike.worldX >= 0) {
         const bikeScreenX = egoScreenX + bike.worldX * SCALE;
         const bikeScreenY = egoScreenY - 25; // little offset
 
@@ -449,7 +478,7 @@
       // HUD text
       ctx.fillStyle = "#9ca3af";
       ctx.font = "12px system-ui";
-      ctx.fillText("Top-down road view – You (blue), other bike (orange)", 10, 18);
+      ctx.fillText("Top-down approximation – You (blue). Other bike only appears when it's next to you.", 10, 18);
     }
 
     function updateStats(relDist, closingSpeed) {
@@ -459,8 +488,14 @@
       relSpeedEl.textContent =
         closingSpeed === null ? "–" : closingSpeed.toFixed(2);
 
-      detStateEl.textContent = detectionActive ? "ON" : "OFF";
-      detStateEl.style.color = detectionActive ? "#22c55e" : "#ef4444";
+      // Detection label: if light is disabled, show DISABLED
+      if (!lightEnabled) {
+        detStateEl.textContent = "DISABLED";
+        detStateEl.style.color = "#9ca3af";
+      } else {
+        detStateEl.textContent = detectionActive ? "ON" : "OFF";
+        detStateEl.style.color = detectionActive ? "#22c55e" : "#ef4444";
+      }
 
       reactionCountEl.textContent = reactionCount.toString();
       detCountEl.textContent = detectionCount.toString();
@@ -496,7 +531,7 @@
         }
       }
 
-      // detection logic
+      // detection logic (always runs, even in NO LIGHT condition)
       let relDist = null;
       let closingSpeed = null;
 
@@ -510,7 +545,7 @@
           relDist <= detParams.distance &&
           closingSpeed >= detParams.closingSpeedThresh;
 
-        // log detection edges
+        // log detection edges (independent of whether light is visible)
         if (detectionActive && !lastDetectionActive) {
           detectionCount += 1;
           logEvent("auto_detect_on", relDist, closingSpeed, true);
@@ -573,7 +608,7 @@
         alert("No events logged yet.");
         return;
       }
-      let csv = "time_s,type,rel_distance_m,closing_speed_mps,detection_active,bike_id\n";
+      let csv = "time_s,type,rel_distance_m,closing_speed_mps,detection_active,bike_id,light_enabled\n";
       for (const e of events) {
         csv += [
           e.time.toFixed(3),
@@ -582,6 +617,7 @@
           e.closingSpeed !== null ? e.closingSpeed.toFixed(3) : "",
           e.detectionActive,
           e.bikeId,
+          e.lightEnabled,
         ].join(",") + "\n";
       }
 
